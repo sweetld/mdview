@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' file: data: blob:; font-src 'self' file: data:; connect-src 'self' file:; media-src 'self' file:;" />
+  <title>MD View</title>
+  <link rel="stylesheet" href="vendor/vendor.css" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <header id="toolbar">
+      <button id="btn-sidebar" class="icon-btn" title="Toggle sidebar (Ctrl+B)" aria-label="Toggle sidebar">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 2.5h13v11h-13z"/><path d="M6 2.5v11"/></svg>
+      </button>
+      <button id="btn-open" class="text-btn" title="Open a Markdown file (Ctrl+O)">Open file</button>
+      <button id="btn-folder" class="text-btn" title="Open a folder (Ctrl+Shift+O)">Open folder</button>
+
+      <div id="crumb" title="">No file open</div>
+
+      <div id="find" hidden>
+        <svg viewBox="0 0 16 16" aria-hidden="true" class="find-icon"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg>
+        <input id="find-input" type="text" placeholder="Find in document" spellcheck="false" />
+        <span id="find-count">0/0</span>
+        <button id="find-prev" class="icon-btn sm" title="Previous (Shift+F3)" aria-label="Previous match">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 10 8 6l4 4"/></svg>
+        </button>
+        <button id="find-next" class="icon-btn sm" title="Next (F3)" aria-label="Next match">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
+        </button>
+        <button id="find-close" class="icon-btn sm" title="Close (Esc)" aria-label="Close find">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+        </button>
+      </div>
+
+      <button id="btn-edit" class="icon-btn" title="Edit document (Ctrl+E)" aria-label="Edit document">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M11.3 2.2l2.5 2.5L5.5 13H3v-2.5z"/><path d="M9.8 3.7l2.5 2.5"/></svg>
+      </button>
+      <button id="btn-preview" class="icon-btn" title="Toggle live preview (Ctrl+Shift+P)" aria-label="Toggle live preview" hidden>
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 8s2.5-4.5 6.5-4.5S14.5 8 14.5 8s-2.5 4.5-6.5 4.5S1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/></svg>
+      </button>
+      <button id="btn-source" class="icon-btn" title="Toggle source view (Ctrl+U)" aria-label="Toggle source view">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 4 2 8l3.5 4M10.5 4 14 8l-3.5 4"/></svg>
+      </button>
+      <button id="btn-theme" class="icon-btn" title="Toggle theme" aria-label="Toggle theme">
+        <svg viewBox="0 0 16 16" aria-hidden="true" class="ico-sun"><circle cx="8" cy="8" r="3.2"/><path d="M8 1v1.6M8 13.4V15M1 8h1.6M13.4 8H15M3.1 3.1l1.1 1.1M11.8 11.8l1.1 1.1M12.9 3.1l-1.1 1.1M4.2 11.8l-1.1 1.1"/></svg>
+        <svg viewBox="0 0 16 16" aria-hidden="true" class="ico-moon"><path d="M13.5 9.6A5.8 5.8 0 0 1 6.4 2.5a5.8 5.8 0 1 0 7.1 7.1z"/></svg>
+      </button>
+      <button id="btn-toc" class="icon-btn" title="Toggle outline (Ctrl+Shift+B)" aria-label="Toggle outline">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3.5h12M4.5 8h9.5M7 12.5h7"/></svg>
+      </button>
+    </header>
+
+    <div id="body">
+      <aside id="sidebar">
+        <div class="pane-head">
+          <span id="sidebar-title">Files</span>
+          <button id="sidebar-filter-btn" class="icon-btn sm" title="Filter files" aria-label="Filter files">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg>
+          </button>
+        </div>
+        <input id="sidebar-filter" type="text" placeholder="Filter…" spellcheck="false" hidden />
+        <nav id="tree" aria-label="Files"></nav>
+        <p id="tree-empty" class="pane-empty">Open a folder to browse its Markdown files.</p>
+      </aside>
+
+      <section id="editor-pane" hidden>
+        <div id="editor-tools" role="toolbar" aria-label="Formatting">
+          <button class="fmt" data-fmt="bold" title="Bold (Ctrl+B)"><b>B</b></button>
+          <button class="fmt" data-fmt="italic" title="Italic (Ctrl+I)"><i>I</i></button>
+          <button class="fmt" data-fmt="strike" title="Strikethrough (Ctrl+Shift+X)"><s>S</s></button>
+          <button class="fmt" data-fmt="code" title="Inline code (Ctrl+Shift+C)"><code>&lt;/&gt;</code></button>
+          <span class="tool-sep"></span>
+          <button class="fmt" data-fmt="h1" title="Heading 1 (Ctrl+Alt+1)">H1</button>
+          <button class="fmt" data-fmt="h2" title="Heading 2 (Ctrl+Alt+2)">H2</button>
+          <button class="fmt" data-fmt="h3" title="Heading 3 (Ctrl+Alt+3)">H3</button>
+          <span class="tool-sep"></span>
+          <button class="fmt" data-fmt="bullet" title="Bulleted list (Ctrl+Shift+8)">• List</button>
+          <button class="fmt" data-fmt="numbered" title="Numbered list (Ctrl+Shift+7)">1. List</button>
+          <button class="fmt" data-fmt="task" title="Task list (Ctrl+Shift+9)">☐ Task</button>
+          <button class="fmt" data-fmt="quote" title="Block quote (Ctrl+Alt+Q)">❝ Quote</button>
+          <span class="tool-sep"></span>
+          <button class="fmt" data-fmt="link" title="Insert link (Ctrl+K)">Link</button>
+          <button class="fmt" data-fmt="image" title="Insert image (Ctrl+Alt+I)">Image</button>
+          <button class="fmt" data-fmt="table" title="Insert table (Ctrl+Alt+T)">Table</button>
+          <button class="fmt" data-fmt="codeblock" title="Code block (Ctrl+Alt+C)">Code</button>
+          <button class="fmt" data-fmt="mermaid" title="Insert Mermaid diagram (Ctrl+Alt+D)">Diagram</button>
+          <span class="tool-grow"></span>
+          <button id="btn-save" class="fmt save" title="Save (Ctrl+S)">Save</button>
+        </div>
+        <div id="editor-host"></div>
+      </section>
+      <div id="split-handle" hidden title="Drag to resize"></div>
+
+      <main id="main">
+        <article id="content" class="markdown"></article>
+        <pre id="source" hidden><code class="hljs language-markdown"></code></pre>
+
+        <section id="canvas" hidden>
+          <div id="scene-holder"></div>
+          <div id="scene-error" hidden></div>
+        </section>
+        <section id="draw-editor" hidden aria-label="Drawing editor"></section>
+
+        <section id="welcome">
+          <div class="welcome-inner">
+            <svg class="welcome-mark" viewBox="0 0 64 64" aria-hidden="true">
+              <rect x="6" y="4" width="44" height="56" rx="5"/>
+              <path d="M16 20h20M16 29h24M16 38h24M16 47h14"/>
+            </svg>
+            <h1>MD View</h1>
+            <p>Open a Markdown file, drop one onto this window, or start writing.</p>
+            <div class="welcome-actions">
+              <button id="welcome-open" class="primary-btn">Open file…</button>
+              <button id="welcome-folder" class="ghost-btn">Open folder…</button>
+              <button id="welcome-new" class="ghost-btn">New file</button>
+            </div>
+            <ul id="welcome-recent"></ul>
+          </div>
+        </section>
+      </main>
+
+      <aside id="toc">
+        <div class="pane-head"><span>Outline</span></div>
+        <nav id="toc-list" aria-label="Document outline"></nav>
+        <p id="toc-empty" class="pane-empty">No headings.</p>
+      </aside>
+    </div>
+
+    <div id="zoom-pill" hidden>
+      <button id="zoom-out" class="icon-btn sm" title="Zoom out (Ctrl+−)" aria-label="Zoom out">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8h9"/></svg>
+      </button>
+      <button id="zoom-level" class="zoom-num" title="Reset to 100%">100%</button>
+      <button id="zoom-in" class="icon-btn sm" title="Zoom in (Ctrl++)" aria-label="Zoom in">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3.5v9M3.5 8h9"/></svg>
+      </button>
+      <span class="zoom-sep"></span>
+      <button id="zoom-fit" class="zoom-num" title="Fit to window (Ctrl+9)">Fit</button>
+    </div>
+
+    <footer id="status">
+      <span id="status-path"></span>
+      <span id="status-right">
+        <span id="status-dirty" hidden>Unsaved changes</span>
+        <span id="status-cursor" hidden></span>
+        <span id="status-meta"></span>
+      </span>
+    </footer>
+  </div>
+
+  <div id="export-stage" aria-hidden="true"></div>
+
+  <div id="draw-modal" hidden>
+    <div class="draw-modal-bar">
+      <span id="draw-modal-title">Edit drawing</span>
+      <span class="tool-grow"></span>
+      <button id="draw-modal-cancel" class="ghost-btn" type="button">Cancel</button>
+      <button id="draw-modal-apply" class="primary-btn" type="button">Apply</button>
+    </div>
+    <div id="draw-modal-host"></div>
+  </div>
+
+  <div id="drop-overlay" hidden><span>Drop a Markdown file or folder</span></div>
+  <div id="toast" hidden></div>
+
+  <div id="help" hidden>
+    <div class="help-card" role="dialog" aria-label="Keyboard shortcuts">
+      <h2>Keyboard shortcuts</h2>
+      <dl>
+        <dt>Ctrl+N</dt><dd>New file</dd>
+        <dt>Ctrl+O</dt><dd>Open file</dd>
+        <dt>Ctrl+Shift+O</dt><dd>Open folder</dd>
+        <dt>Ctrl+S / Ctrl+Shift+S</dt><dd>Save / Save as</dd>
+        <dt>Ctrl+E</dt><dd>Edit the document, or the drawing when one is open</dd>
+        <dt>Diagram ▸ Edit</dt><dd>Edit a diagram in place: Source, Visual, or convert to a drawing</dd>
+        <dt>Ctrl+Shift+P</dt><dd>Show / hide the live preview while editing</dd>
+        <dt>Ctrl+B / I / K</dt><dd>Bold, italic, link (while editing)</dd>
+        <dt>Ctrl+Alt+1…4</dt><dd>Heading level (while editing)</dd>
+        <dt>Format menu</dt><dd>Lists, quotes, tables, diagrams</dd>
+        <dt>Ctrl+R</dt><dd>Reload the current file</dd>
+        <dt>Ctrl+F</dt><dd>Find in document</dd>
+        <dt>F3 / Shift+F3</dt><dd>Next / previous match</dd>
+        <dt>Ctrl+B (Ctrl+\ while editing)</dt><dd>Toggle sidebar</dd>
+        <dt>Ctrl+Shift+B</dt><dd>Toggle outline</dd>
+        <dt>Ctrl+U</dt><dd>Toggle source view</dd>
+        <dt>Ctrl+Shift+W</dt><dd>Toggle fixed reading width</dd>
+        <dt>Ctrl+Shift+M</dt><dd>Monospace text in diagrams</dd>
+        <dt>Drag</dt><dd>Pan a diagram</dd>
+        <dt>Space+drag</dt><dd>Pan a diagram</dd>
+        <dt>Ctrl+scroll</dt><dd>Zoom a diagram at the pointer</dd>
+        <dt>Ctrl+9</dt><dd>Fit diagram to window</dd>
+        <dt>Ctrl+P</dt><dd>Export as PDF</dd>
+        <dt>Ctrl+Shift+E</dt><dd>Export as a Word document</dd>
+        <dt>File ▸ Export</dt><dd>Whole folder as one PDF or Word file</dd>
+        <dt>Ctrl+ + / − / 0</dt><dd>Zoom in, out, reset</dd>
+        <dt>F11</dt><dd>Full screen</dd>
+        <dt>F1</dt><dd>This help</dd>
+      </dl>
+      <button id="help-close" class="primary-btn">Close</button>
+    </div>
+  </div>
+
+  <script src="vendor/asset-path.js"></script>
+  <script src="vendor/vendor.js"></script>
+  <script src="scene.js"></script>
+  <script src="export.js"></script>
+  <script src="editor.js"></script>
+  <script src="draw.js"></script>
+  <script src="flow.js"></script>
+  <script src="designer.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

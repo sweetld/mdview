@@ -1,0 +1,99 @@
+# Packaging configuration. `npm run dist` builds for the machine you are on;
+# macOS builds must run on a Mac and Windows installers on Windows (or Linux
+# with wine), because each platform's installer tooling is platform-native.
+appId: uk.daud.mdview
+productName: MD View
+copyright: ""
+
+directories:
+  buildResources: build
+  output: dist
+
+files:
+  - package.json
+  - icon.png
+  - src/**/*
+  - "!src/vendor-entry.js"
+  - "!**/*.map"
+
+# Documents the app can be opened with, which is also what puts it in the
+# "Open With" menus on each platform.
+fileAssociations:
+  - ext: md
+    name: Markdown Document
+    description: Markdown document
+    mimeType: text/markdown
+    role: Editor
+    icon: build/icon
+  - ext: markdown
+    name: Markdown Document
+    mimeType: text/markdown
+    role: Editor
+    icon: build/icon
+  - ext: excalidraw
+    name: Excalidraw Drawing
+    description: Excalidraw drawing
+    mimeType: application/vnd.excalidraw+json
+    role: Viewer
+    icon: build/icon
+
+mac:
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
+  icon: build/icon.icns
+  category: public.app-category.productivity
+  # Unsigned: there is no Apple Developer identity here. Gatekeeper needs the
+  # quarantine flag cleared on first run — see INSTALL.md.
+  identity: null
+  hardenedRuntime: false
+
+dmg:
+  title: MD View
+  # The familiar drag-to-Applications window.
+  contents:
+    - x: 140
+      y: 180
+      type: file
+    - x: 400
+      y: 180
+      type: link
+      path: /Applications
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: build/icon.ico
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: MD View
+  uninstallDisplayName: MD View
+
+linux:
+  # AppImage only: it needs no maintainer metadata, runs anywhere, and
+  # AppImageLauncher adds it to the applications menu by itself. A .deb would
+  # additionally require a homepage and a maintainer email address.
+  target:
+    - AppImage
+  icon: build/icon.png
+  category: Utility
+  synopsis: Markdown editor and Excalidraw viewer
+  description: Reads Markdown documents and Excalidraw drawings, with diagrams, search and export to PDF or Word.
+  # Keeps Electron's app_id in step with the .desktop file, so the taskbar
+  # shows the app's own icon rather than a generic one. The matching
+  # desktopName lives in package.json, which is where electron-builder reads it.
+  executableName: mdview
+  syncDesktopName: true
+  desktop:
+    entry:
+      # Must match the WM_CLASS Electron derives from package.json "name",
+      # otherwise the taskbar shows a generic icon.
+      StartupWMClass: mdview
