@@ -42,3 +42,7 @@ npm start                # or: npx electron . notes.md
 | `npm run build:icons` | Re-renders icon PNGs from `icon.svg` |
 | `npm run build:platform-icons` | Derives `build/icon.icns` and `build/icon.ico` |
 | `npm run dist` | Packages for the current OS into `dist/` |
+
+## License
+
+[MIT](LICENSE)
