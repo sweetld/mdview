@@ -2,7 +2,7 @@
   "name": "mdview",
   "version": "1.3.0",
   "description": "Markdown editor and Excalidraw viewer with live preview, editable Mermaid diagrams, search and export to PDF or Word",
-  "author": "Daud",
+  "author": "Daud Sweetland",
   "license": "MIT",
   "desktopName": "mdview.desktop",
   "main": "src/main.js",
