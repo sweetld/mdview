@@ -11,44 +11,60 @@ and packaging tools are platform-native — one command each.
 
 ## macOS
 
+Easiest: from a clone of the repo, run
+
+```bash
+./install.sh
+```
+
+It builds *MD View.app* on your Mac, signs it ad hoc and copies it to
+`~/Applications`, so it appears in Launchpad and Spotlight. No Apple Developer
+account is needed and Gatekeeper does not prompt, because an app built on the
+machine that runs it is never quarantined. Works on Apple Silicon and Intel.
+
+To produce a distributable `.dmg` instead:
+
 ```bash
 npm install
 npm run dist:mac
 ```
 
-`dist/` gets **MD View-&lt;version&gt;.dmg**. Open it and drag *MD View* to Applications —
-that is what puts the icon in Launchpad and Applications. The app bundles its
-own Electron runtime, so nothing else is needed to run it afterwards.
-
-The build is unsigned, because signing needs an Apple Developer certificate.
-The first launch is therefore blocked by Gatekeeper. Either right-click the app
-and choose **Open** (then **Open** again in the dialog), or clear the flag:
+The `.dmg` is ad-hoc signed but not notarized. If you **download** it (or send it
+to someone else), Gatekeeper blocks the first launch; right-click the app and
+choose **Open**, or clear the flag:
 
 ```bash
 xattr -dr com.apple.quarantine "/Applications/MD View.app"
 ```
 
-A build produced anywhere other than a Mac will not run on Apple Silicon at
-all: macOS refuses unsigned arm64 binaries outright, and only the Mac can sign
-them. Build on the Mac.
+Notarized builds with no prompt at all require a paid Apple Developer ID. Build
+on a Mac; macOS tooling is needed for the `.dmg` and the signature.
 
-## Windows
+## Windows (10 and later)
+
+Easiest: from a clone of the repo, double-click `install.cmd` (or run
+`powershell -ExecutionPolicy Bypass -File install.ps1`). It builds the installer
+and runs it silently: per-user (no administrator rights), Start Menu and desktop
+shortcuts, `.md` and `.excalidraw` registered.
+
+To build the installer yourself:
 
 ```bash
 npm install
 npm run dist:win
 ```
 
-`dist/` gets **MD View Setup &lt;version&gt;.exe**. Running it installs the app, creates
-Start Menu and desktop shortcuts, and registers it for `.md` and `.excalidraw`
-files. It installs per-user, so no administrator rights are needed, and the
-install location can be changed during setup.
+`dist/` gets **MD View Setup &lt;version&gt;.exe**. A downloaded copy shows a
+SmartScreen warning (no code-signing certificate): choose **More info ▸ Run
+anyway**. One built locally does not.
 
-Windows SmartScreen will warn about an unrecognised publisher, for the same
-reason as Gatekeeper: no code-signing certificate. Choose **More info ▸ Run
-anyway**.
+## Linux (Debian, Ubuntu and derivatives)
 
-## Linux
+Easiest: from a clone of the repo, run `./install.sh`. It installs dependencies,
+adds the launcher, icons and `.md`/`.excalidraw` file types to your desktop and
+a `mdview` command. Keep the folder in place; the launcher runs from it.
+
+For a standalone AppImage:
 
 ```bash
 npm install
@@ -64,8 +80,7 @@ chmod +x dist/*.AppImage
 
 With AppImageLauncher installed it offers to integrate on first run, which adds
 the menu entry and icon and moves the file to `~/Applications`. Without it, run
-the AppImage directly or use `./install.sh`, which registers a launcher for a
-copy running from source rather than a packaged one.
+the AppImage directly.
 
 ## Running from source instead
 
