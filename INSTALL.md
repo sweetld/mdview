@@ -22,23 +22,9 @@ It builds *MD View.app* on your Mac, signs it ad hoc and copies it to
 account is needed and Gatekeeper does not prompt, because an app built on the
 machine that runs it is never quarantined. Works on Apple Silicon and Intel.
 
-To produce a distributable `.dmg` instead:
-
-```bash
-npm install
-npm run dist:mac
-```
-
-The `.dmg` is ad-hoc signed but not notarized. If you **download** it (or send it
-to someone else), Gatekeeper blocks the first launch; right-click the app and
-choose **Open**, or clear the flag:
-
-```bash
-xattr -dr com.apple.quarantine "/Applications/MD View.app"
-```
-
-Notarized builds with no prompt at all require a paid Apple Developer ID. Build
-on a Mac; macOS tooling is needed for the `.dmg` and the signature.
+There is deliberately no `.dmg` or downloadable Mac build: a copy that is
+downloaded or sent to someone else is quarantined and would hit Gatekeeper, which
+only a paid Apple Developer ID and notarization can avoid. Each Mac builds its own.
 
 ## Windows (10 and later)
 
@@ -98,7 +84,7 @@ possible and mostly not worth it:
 
 | From | macOS target | Windows target | Linux target |
 | --- | --- | --- | --- |
-| macOS | yes | needs wine | yes |
+| macOS | via `./install.sh` | needs wine | yes |
 | Windows | no | yes | yes |
 | Linux | `.app` only, unsigned and unusable on Apple Silicon | needs wine | yes |
 
