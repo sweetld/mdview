@@ -38,34 +38,20 @@ fileAssociations:
     icon: build/icon
 
 mac:
+  # No .dmg or .zip: only install.sh builds the Mac app, on the Mac that runs it.
   target:
-    - target: dmg
-      arch: [arm64, x64]
-    - target: zip
-      arch: [arm64, x64]
+    - target: dir
   icon: build/icon.icns
   category: public.app-category.productivity
   # Ad-hoc signed ("-"): no Apple Developer identity is needed. identity: null
   # would leave arm64 binaries with a broken signature, which macOS refuses to
   # run at all. Ad-hoc signing is enough for an app built on the machine that
-  # runs it; a downloaded copy still needs the Gatekeeper step in INSTALL.md.
+  # runs it, which is never quarantined, so Gatekeeper does not intervene.
   # Hardened runtime must stay off, as it enforces library validation that an
   # ad-hoc signature cannot satisfy.
   identity: "-"
   hardenedRuntime: false
   gatekeeperAssess: false
-
-dmg:
-  title: MD View
-  # The familiar drag-to-Applications window.
-  contents:
-    - x: 140
-      y: 180
-      type: file
-    - x: 400
-      y: 180
-      type: link
-      path: /Applications
 
 win:
   target:

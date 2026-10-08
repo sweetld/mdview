@@ -14,7 +14,6 @@
     "build:icons": "electron tools/make-icons.js && python3 tools/downscale.py",
     "build:platform-icons": "node tools/make-platform-icons.js",
     "dist": "npm run build && node tools/make-platform-icons.js && electron-builder",
-    "dist:mac": "npm run build && node tools/make-platform-icons.js && electron-builder --mac",
     "dist:win": "npm run build && node tools/make-platform-icons.js && electron-builder --win",
     "dist:linux": "npm run build && node tools/make-platform-icons.js && electron-builder --linux",
     "postinstall": "node tools/copy-assets.js",

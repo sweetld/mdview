@@ -22,7 +22,7 @@ cd mdview
 
 On macOS the app is built on your own Mac, which is why no Apple Developer
 account or "unidentified developer" step is involved. Details, standalone
-installers (`.dmg`, `.exe`, AppImage) and troubleshooting are in
+installers (`.exe`, AppImage) and troubleshooting are in
 [INSTALL.md](INSTALL.md).
 
 To remove it: `./uninstall.sh` (Linux/macOS), or Windows *Settings ▸ Apps*.
