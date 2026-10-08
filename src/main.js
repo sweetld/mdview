@@ -744,6 +744,10 @@ ipcMain.handle('app:versions', () => ({ app: app.getVersion(), electron: process
 // which otherwise claims the single-instance lock and swallows the launch.
 if (process.env.MDV_USER_DATA) app.setPath('userData', process.env.MDV_USER_DATA);
 
+// Windows groups the taskbar button and picks its icon by this ID; it must match
+// the appId in electron-builder.yml or a source run shows Electron's own icon.
+if (process.platform === 'win32') app.setAppUserModelId('uk.daud.mdview');
+
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
@@ -762,6 +766,10 @@ if (!app.requestSingleInstanceLock()) {
     nativeTheme.on('updated', () => {
       if (!exporting) send('theme:system-changed', nativeTheme.shouldUseDarkColors);
     });
+    // Packaged builds take the Dock icon from the .icns; a source run needs it set.
+    if (process.platform === 'darwin' && app.dock && !app.isPackaged) {
+      app.dock.setIcon(path.join(__dirname, '..', 'build', 'icon.png'));
+    }
     createWindow();
     buildMenu();
     const targets = pathsFromArgv(process.argv);

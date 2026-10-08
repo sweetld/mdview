@@ -2,6 +2,12 @@
 # Removes everything install.sh added. The app directory itself is left alone.
 set -euo pipefail
 
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  rm -rf "$HOME/Applications/MD View.app"
+  echo "MD View.app removed."
+  exit 0
+fi
+
 APPS="$HOME/.local/share/applications"
 ICONS="$HOME/.local/share/icons/hicolor"
 
