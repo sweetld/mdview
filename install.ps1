@@ -10,8 +10,12 @@ Set-Location $PSScriptRoot
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
   throw 'Node.js 20 or newer is required. Install it from https://nodejs.org and re-run.'
 }
-if ([int]((node -p 'process.versions.node.split(".")[0]')) -lt 20) {
-  throw "Node.js 20 or newer is required (found $(node -v))."
+# Parse `node -v` here rather than passing a script to `node -p`: Windows
+# PowerShell 5.1 strips the double quotes from native-command arguments, so
+# node would receive split(.) and fail, and every version would be rejected.
+$nodeVersion = node -v
+if ([int]($nodeVersion.TrimStart('v').Split('.')[0]) -lt 20) {
+  throw "Node.js 20 or newer is required (found $nodeVersion)."
 }
 
 Write-Host 'Installing dependencies...'
