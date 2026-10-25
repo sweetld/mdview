@@ -42,6 +42,10 @@ case "$(uname -s)" in
     xattr -cr "$DEST/MD View.app"
     codesign --force --deep --sign - "$DEST/MD View.app"
     codesign --verify --deep "$DEST/MD View.app" && echo "Signature OK (ad hoc)."
+    # Spotlight and Launchpad index any .app they can see, so the build copy
+    # left in dist/ would show up as a second "MD View". Only the installed
+    # one should exist.
+    rm -rf dist
 
     echo
     echo "Installed: $DEST/MD View.app"
