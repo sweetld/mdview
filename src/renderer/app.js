@@ -21,7 +21,14 @@ const el = {
   splitHandle: $('split-handle'), btnSave: $('btn-save'),
   drawEditor: $('draw-editor'), drawModal: $('draw-modal'), drawModalHost: $('draw-modal-host'),
   drawModalTitle: $('draw-modal-title'),
+  tabs: $('tabs'),
 };
+
+// Open documents. `state` always describes the active tab; the others keep
+// their text, unsaved edits, edit mode and scroll position here until they
+// are switched back to.
+const tabs = [];
+let activeTab = null;
 
 const state = {
   path: null, dir: null, raw: '', root: null, tree: [], kind: 'markdown',
@@ -455,7 +462,7 @@ function openDiagramEditor(wrap, text, index) {
   const mode = document.createElement('div');
   mode.className = 'de-mode';
   const modeSource = button('on', 'Source', () => setMode('source'));
-  const modeVisual = button('', 'Visual', () => setMode('visual'), 'Edit the flowchart on the picture');
+  const modeVisual = button('', 'Visual', () => setMode('visual'), 'Edit the diagram on the picture');
   mode.append(modeSource, modeVisual);
   const status = document.createElement('span');
   status.className = 'de-status';
@@ -535,9 +542,7 @@ function openDiagramEditor(wrap, text, index) {
       try {
         await designer.load(ed.getValue());
       } catch (err) {
-        setStatus(err.code === 'NOT_FLOWCHART'
-          ? 'Visual editing works on flowcharts; this is a different diagram type'
-          : firstLine(err), true);
+        setStatus(err.code === 'NOT_SUPPORTED' ? err.message : firstLine(err), true);
         return;
       }
       panel.classList.add('visual');
@@ -901,6 +906,7 @@ function renderTree(nodes, container, depth = 0) {
       label.textContent = node.name;
       row.append(label);
       row.addEventListener('click', () => ipc.openPath(node.path));
+      row.addEventListener('contextmenu', (e) => { e.preventDefault(); ipc.treeMenu(node.path); });
       container.append(row);
     }
   }
@@ -910,6 +916,7 @@ function markCurrentInTree() {
   for (const row of el.tree.querySelectorAll('.row.file')) {
     const on = row.dataset.path === state.path;
     row.classList.toggle('current', on);
+    row.classList.toggle('open', tabs.some((t) => t.path === row.dataset.path));
     if (on) row.scrollIntoView({ block: 'nearest' });
   }
 }
@@ -1055,9 +1062,12 @@ window.__exportAssemble = async (paths) => {
 
   for (let i = 0; i < list.length; i++) {
     const filePath = list[i];
-    // The open document exports as it is on screen, unsaved edits included.
+    // Open documents export as they are on screen, unsaved edits included.
     const current = !filePath || filePath === state.path;
-    const res = current ? { ok: true, content: state.raw } : await ipc.readFile(filePath);
+    const tab = current ? null : tabs.find((t) => t.path === filePath);
+    const res = current ? { ok: true, content: state.raw }
+      : tab ? { ok: true, content: tab.raw }
+        : await ipc.readFile(filePath);
     if (!res.ok) continue;
 
     const section = document.createElement('section');
@@ -1463,6 +1473,7 @@ function setDirty(dirty) {
   el.btnSave.classList.toggle('dirty', dirty);
   updateTitle();
   ipc.setDocStatus({ path: state.path, dirty });
+  syncActiveTab();
 }
 
 function setDocument({ path: filePath, content, dir, kind }) {
@@ -1625,34 +1636,240 @@ function togglePreview() {
   editor.focus();
 }
 
-// New, empty document. It lives in memory until it is saved.
+// New, empty document in a tab of its own. It lives in memory until saved.
 function newDocument() {
-  if (state.path) state.scrollMemory.set(state.path, el.main.scrollTop);
-  if (sceneEditor) { unmountSceneEditor(); state.editing = false; }
+  const tab = makeTab({ path: null, dir: state.root || '', raw: '', untitled: true, editing: true });
+  tabs.push(tab);
+  activateTab(tab);
+}
+
+/* ================================================================== tabs */
+
+let tabSeq = 0;
+let untitledSeq = 0;
+
+function makeTab(fields) {
+  return {
+    id: ++tabSeq, path: null, dir: null, raw: '', savedRaw: fields.raw || '', dirty: false,
+    kind: 'markdown', untitled: false, editing: false, scroll: 0, diskChanged: false,
+    untitledNo: fields.untitled ? ++untitledSeq : 0,
+    ...fields,
+  };
+}
+
+function isTabDirty(tab) {
+  return tab === activeTab ? state.dirty : tab.dirty;
+}
+
+function tabBaseName(tab) {
+  if (tab.path) return tab.path.split('/').pop();
+  return tab.untitledNo > 1 ? `Untitled ${tab.untitledNo}` : 'Untitled';
+}
+
+// Two files with the same name are told apart by their parent folder.
+function tabLabels() {
+  const counts = new Map();
+  for (const t of tabs) counts.set(tabBaseName(t), (counts.get(tabBaseName(t)) || 0) + 1);
+  return tabs.map((t) => {
+    const name = tabBaseName(t);
+    if (counts.get(name) > 1 && t.path) {
+      const parent = t.path.split('/').slice(-2, -1)[0];
+      if (parent) return `${parent}/${name}`;
+    }
+    return name;
+  });
+}
+
+function renderTabs() {
+  el.tabs.replaceChildren();
+  el.tabs.hidden = tabs.length === 0;
+  const labels = tabLabels();
+  tabs.forEach((tab, i) => {
+    const t = document.createElement('div');
+    t.className = 'tab';
+    t.setAttribute('role', 'tab');
+    t.classList.toggle('active', tab === activeTab);
+    t.classList.toggle('dirty', isTabDirty(tab));
+    t.title = tab.path || 'Not saved yet';
+    const name = document.createElement('span');
+    name.className = 'tab-name';
+    name.textContent = labels[i];
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'tab-close';
+    close.title = 'Close (Ctrl+W)';
+    close.setAttribute('aria-label', `Close ${labels[i]}`);
+    close.innerHTML = '<svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1.5 1.5l7 7M8.5 1.5l-7 7"/></svg>';
+    close.addEventListener('click', (e) => { e.stopPropagation(); closeTab(tab); });
+    t.addEventListener('click', () => activateTab(tab));
+    t.addEventListener('auxclick', (e) => { if (e.button === 1) { e.preventDefault(); closeTab(tab); } });
+    t.append(name, close);
+    el.tabs.append(t);
+    if (tab === activeTab) requestAnimationFrame(() => t.scrollIntoView({ inline: 'nearest', block: 'nearest' }));
+  });
+}
+
+// Copies what `state` says about the active document back onto its tab.
+function stashActive() {
+  const tab = activeTab;
+  if (!tab) return;
+  if (sceneEditor) syncSceneRaw();
+  Object.assign(tab, {
+    path: state.path, dir: state.dir, raw: state.raw, savedRaw: state.savedRaw, dirty: state.dirty,
+    kind: state.kind, untitled: state.untitled, editing: state.editing, scroll: el.main.scrollTop,
+  });
+}
+
+// The cheap subset of stashActive, for things the tab bar shows.
+function syncActiveTab() {
+  if (!activeTab) return;
+  activeTab.path = state.path;
+  activeTab.dirty = state.dirty;
+  activeTab.untitled = state.untitled;
+  renderTabs();
+}
+
+// Takes the editing chrome down without redrawing — the next document is
+// about to be drawn anyway.
+function leaveEditUi() {
+  if (!state.editing) return;
+  if (sceneEditor) { syncSceneRaw(); unmountSceneEditor(); }
+  clearTimeout(previewTimer);
+  closeDiagramEditor();
+  state.editing = false;
+  el.statusCursor.hidden = true;
+  ipc.setEditing(false);
+}
+
+function loadTab(tab) {
+  leaveEditUi();
   closeDrawOverlay();
+  if (tab.untitled) {
+    if (state.path) state.scrollMemory.set(state.path, el.main.scrollTop);
+    state.path = null;
+    state.dir = tab.dir || state.root || '';
+    state.raw = tab.raw;
+    state.savedRaw = tab.savedRaw;
+    state.untitled = true;
+    state.kind = 'markdown';
+    state.scene = null;
+    clearDiagramCaches();
+    el.welcome.hidden = true;
+    el.sourceCode.textContent = tab.raw;
+    setDirty(false);
+    updateTitle();
+    ipc.setDocStatus({ path: null, dirty: false });
+    markCurrentInTree();
+    applyView();
+    render(tab.raw, { path: null, dir: state.dir }).then(() => restoreScroll(tab.scroll || 0));
+  } else {
+    if (tab.path) state.scrollMemory.set(tab.path, tab.scroll || 0);
+    setDocument({ path: tab.path, content: tab.raw, dir: tab.dir, kind: tab.kind });
+  }
+  if (tab.dirty) {
+    state.savedRaw = tab.savedRaw;
+    setDirty(true);
+  }
+  if (tab.editing) enterEdit();
+  if (tab.diskChanged) {
+    tab.diskChanged = false;
+    toast('This file changed on disk while you were away — Reload (Ctrl+R) to pick it up');
+  }
+  renderTabs();
+}
+
+function activateTab(tab) {
+  if (tab === activeTab) { renderTabs(); return; }
+  stashActive();
+  activeTab = tab;
+  loadTab(tab);
+}
+
+// A file arriving from the main process: a new tab, or back to its old one.
+function openTab({ path: filePath, content, dir, kind }) {
+  const existing = tabs.find((t) => t.path === filePath);
+  if (existing) {
+    if (existing !== activeTab) activateTab(existing);
+    // Re-opened with different contents on disk and nothing unsaved here.
+    if (!state.dirty && content !== state.raw) setDocument({ path: filePath, content, dir, kind });
+    else renderTabs();
+    return;
+  }
+  const tab = makeTab({ path: filePath, dir, raw: content, kind: kind || 'markdown' });
+  tabs.push(tab);
+  activateTab(tab);
+}
+
+async function closeTab(tab, { force = false } = {}) {
+  if (!tab) return false;
+  if (!force && isTabDirty(tab)) {
+    if (tab !== activeTab) activateTab(tab);
+    if (!(await confirmDiscard())) return false;
+  }
+  const i = tabs.indexOf(tab);
+  if (i < 0) return true;
+  tabs.splice(i, 1);
+  if (tab.path && !tabs.some((t) => t.path === tab.path)) ipc.unwatchFile(tab.path);
+  if (tab === activeTab) {
+    // Nothing to stash: the document is going. Prefer the neighbour on the right.
+    activeTab = tabs[i] || tabs[i - 1] || null;
+    if (activeTab) loadTab(activeTab);
+    else showEmpty();
+  }
+  renderTabs();
+  markCurrentInTree();
+  return true;
+}
+
+function cycleTab(step) {
+  if (tabs.length < 2) return;
+  const i = tabs.indexOf(activeTab);
+  activateTab(tabs[(i + step + tabs.length) % tabs.length]);
+}
+
+// Back to the welcome screen once the last tab closes.
+function showEmpty() {
+  leaveEditUi();
+  closeDrawOverlay();
+  state.renderToken++;
   state.path = null;
-  state.dir = state.root || '';
+  state.dir = null;
   state.raw = '';
   state.savedRaw = '';
-  state.untitled = true;
+  state.untitled = false;
   state.kind = 'markdown';
   state.scene = null;
-  el.welcome.hidden = true;
-  el.sourceCode.textContent = '';
   setDirty(false);
-  updateTitle();
+  el.content.replaceChildren();
+  el.sourceCode.textContent = '';
+  el.sceneHolder.replaceChildren();
+  el.tocList.replaceChildren();
+  el.tocEmpty.hidden = false;
+  document.title = 'MD View';
+  el.crumb.textContent = 'No file open';
+  el.crumb.title = '';
+  el.statusPath.textContent = '';
+  el.statusMeta.textContent = '';
   ipc.setDocStatus({ path: null, dirty: false });
+  applyView();
+  el.welcome.hidden = false;
   markCurrentInTree();
-  render('', { path: null, dir: state.dir });
-  if (!state.editing) {
-    state.editing = true;
-    ensureEditor();
-    applyView();
-    el.statusCursor.hidden = false;
-    ipc.setEditing('text');
+}
+
+const BIN = /win/i.test(navigator.platform) ? 'Recycle Bin' : 'Trash';
+
+// Moves a file to the Trash after confirmation, closing its tab if it has one.
+async function deleteFile(filePath) {
+  if (!filePath) return;
+  const tab = tabs.find((t) => t.path === filePath);
+  const res = await ipc.trashFile(filePath, tab ? isTabDirty(tab) : false);
+  if (!res.ok) {
+    if (!res.canceled) toast('Could not delete: ' + res.error);
+    return;
   }
-  editor.setValue('');
-  editor.focus();
+  if (tab) await closeTab(tab, { force: true });
+  state.scrollMemory.delete(filePath);
+  toast(`Moved ${filePath.split('/').pop()} to the ${BIN}`);
 }
 
 /* ------------------------------------------------------------ scroll sync */
@@ -1758,6 +1975,7 @@ async function saveAs() {
   setDirty(false);
   updateTitle();
   ipc.setDocStatus({ path: state.path, dirty: false });
+  syncActiveTab();
   markCurrentInTree();
   // Relative links and images resolve against the new location.
   if (!sceneEditor) rerender();
@@ -1774,14 +1992,27 @@ async function confirmDiscard() {
   return choice === 'discard';
 }
 
-// The main process calls this before opening another file or closing.
-window.__confirmDiscard = confirmDiscard;
+// Every tab with unsaved changes gets its turn; the first Cancel stops it.
+async function confirmDiscardAll() {
+  for (const tab of [...tabs]) {
+    if (!isTabDirty(tab)) continue;
+    if (tab !== activeTab) activateTab(tab);
+    if (!(await confirmDiscard())) return false;
+  }
+  return true;
+}
+
+// The main process calls this before closing the window.
+window.__confirmDiscard = confirmDiscardAll;
 
 // Handles for the smoke-test hook (MDV_SHOT_JS); nothing in the app uses them.
 window.__mdvTest = {
   sceneEditor: () => sceneEditor,
   overlayEditor: () => overlayEditor,
   state,
+  tabs,
+  activeTab: () => activeTab,
+  activateTab, closeTab, deleteFile,
 };
 
 function togglePane(pane, button, key) {
@@ -1948,13 +2179,13 @@ window.addEventListener('drop', (e) => {
   e.preventDefault();
   dragDepth = 0;
   el.drop.hidden = true;
-  const file = e.dataTransfer.files[0];
-  const p = file && ipc.pathForFile(file);
-  if (p) ipc.openPath(p);
+  const paths = [...e.dataTransfer.files].map((f) => ipc.pathForFile(f)).filter(Boolean);
+  if (paths.length) ipc.openPaths(paths);
 });
 
 /* main-process events ---------------------------------------------------- */
-ipc.onFileOpened((payload) => setDocument(payload));
+ipc.onFileOpened((payload) => openTab(payload));
+ipc.onTrashRequest((p) => deleteFile(p));
 
 ipc.onFolderOpened(({ root, tree }) => {
   state.root = root;
@@ -1970,9 +2201,19 @@ ipc.onFolderOpened(({ root, tree }) => {
 });
 
 ipc.onFileChanged(async (changed) => {
-  if (changed !== state.path) return;
+  const tab = tabs.find((t) => t.path === changed);
+  if (!tab) return;
   const res = await ipc.readFile(changed);
   if (!res.ok) return;
+  if (tab !== activeTab) {
+    // A background tab takes the new text quietly unless it has edits of
+    // its own, in which case it is told when it comes back to the front.
+    if (res.content === tab.savedRaw) return;
+    tab.savedRaw = res.content;
+    if (tab.dirty) tab.diskChanged = true;
+    else tab.raw = res.content;
+    return;
+  }
   // Our own save comes back through the watcher too.
   if (res.content === state.savedRaw) return;
   if (state.dirty) {
@@ -2030,11 +2271,23 @@ ipc.onAction(async (action) => {
     if (state.editing && editor) editor.format(action.slice(4));
     return;
   }
+  if (action.startsWith('tab:')) {
+    const tab = tabs[Number(action.slice(4)) - 1];
+    if (tab) activateTab(tab);
+    return;
+  }
   const target = editingTarget();
   switch (action) {
-    case 'new':
-      if (await confirmDiscard()) newDocument();
+    case 'new': newDocument(); break;
+    case 'close-tab':
+      if (activeTab) closeTab(activeTab); else ipc.closeWindow();
       break;
+    case 'delete-file':
+      if (state.path) deleteFile(state.path);
+      else toast('This document has not been saved yet — close its tab to discard it');
+      break;
+    case 'next-tab': cycleTab(1); break;
+    case 'prev-tab': cycleTab(-1); break;
     case 'save': save(); break;
     case 'save-as': saveAs(); break;
     case 'toggle-edit': toggleEdit(); break;

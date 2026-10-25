@@ -313,3 +313,171 @@
     SHAPES, ARROWS, STROKES, DIRECTIONS, BRACKETS, ALIASES,
   };
 })();
+
+/* ===================================================== designer adapter */
+// How the generic designer sees a flowchart: where its nodes and edges are
+// in the SVG, and what the inspector offers for each.
+(() => {
+  const FM = () => window.FlowModel;
+
+  const nodeEl = (canvas, esc, v) => canvas.querySelector(`g.node[id$="-${esc(v.domId || '')}"]`);
+  const edgeEl = (canvas, esc, e) => canvas.querySelector(`path.flowchart-link[id$="-${esc(e.id)}"]`);
+  const labelEls = (canvas) => [...canvas.querySelectorAll('g.edgeLabel')];
+  const vertex = (m, sel) => (sel && sel.kind === 'node' ? m.vertices.find((v) => v.id === sel.id) : null);
+  const edgeIndex = (m, sel) => (sel && sel.kind === 'edge' ? m.edges.findIndex((e) => e.id === sel.id) : -1);
+
+  function labelFor(canvas, m, i) {
+    const labels = labelEls(canvas);
+    return labels.length === m.edges.length ? labels[i] : null;
+  }
+
+  window.FlowAdapter = {
+    name: 'flowcharts',
+    addLabel: () => '+ Node',
+    matches: (type) => /^flowchart|^graph/.test(type),
+    parse: (text) => FM().parse(text),
+    serialize: (model) => FM().serialize(model),
+
+    bind(canvas, model, ctx) {
+      for (const v of model.vertices) {
+        const g = nodeEl(canvas, ctx.esc, v);
+        if (!g) continue;
+        g.classList.add('fd-node');
+        g.addEventListener('click', (e) => { e.stopPropagation(); ctx.click({ kind: 'node', id: v.id }, e); });
+        g.addEventListener('dblclick', (e) => { e.stopPropagation(); ctx.dblclick({ kind: 'node', id: v.id }); });
+      }
+      model.edges.forEach((edge, i) => {
+        const sel = { kind: 'edge', id: edge.id };
+        const path = edgeEl(canvas, ctx.esc, edge);
+        if (path) {
+          path.classList.add('fd-edge');
+          path.addEventListener('click', (e) => { e.stopPropagation(); ctx.click(sel, e); });
+        }
+        const label = labelFor(canvas, model, i);
+        if (label) {
+          label.classList.add('fd-edge-label');
+          label.addEventListener('click', (e) => { e.stopPropagation(); ctx.click(sel, e); });
+          label.addEventListener('dblclick', (e) => { e.stopPropagation(); ctx.setSelection(sel); ctx.focusField('label'); });
+        }
+      });
+    },
+
+    applySelection(canvas, model, sel) {
+      const v = vertex(model, sel);
+      if (v) { const g = nodeEl(canvas, window.FlowDesigner.esc, v); if (g) g.classList.add('fd-selected'); }
+      const i = edgeIndex(model, sel);
+      if (i >= 0) {
+        const path = edgeEl(canvas, window.FlowDesigner.esc, model.edges[i]);
+        if (path) path.classList.add('fd-selected');
+        const label = labelFor(canvas, model, i);
+        if (label) label.classList.add('fd-selected');
+      }
+    },
+
+    canConnect: (sel) => sel.kind === 'node',
+    connect(model, a, b) {
+      FM().addEdge(model, a.id, b.id);
+      return { kind: 'edge', pair: [a.id, b.id] };
+    },
+    resolveSelection(model, sel) {
+      if (sel.kind === 'edge' && sel.pair) {
+        const matches = model.edges.filter((e) => e.start === sel.pair[0] && e.end === sel.pair[1]);
+        const last = matches[matches.length - 1];
+        return last ? { kind: 'edge', id: last.id } : null;
+      }
+      return sel;
+    },
+    add(model, sel) {
+      const v = vertex(model, sel);
+      const id = FM().addNode(model, { after: v ? v.id : null });
+      return { kind: 'node', id };
+    },
+    remove(model, sel) {
+      const v = vertex(model, sel);
+      if (v) { FM().removeNode(model, v.id); return; }
+      const i = edgeIndex(model, sel);
+      if (i >= 0) FM().removeEdge(model, i);
+    },
+    label(model, sel) {
+      const v = vertex(model, sel);
+      if (v) return v.text;
+      const i = edgeIndex(model, sel);
+      return i >= 0 ? model.edges[i].text : '';
+    },
+    setLabel(model, sel, text) {
+      const v = vertex(model, sel);
+      if (v) { v.text = text; return; }
+      const i = edgeIndex(model, sel);
+      if (i >= 0) model.edges[i].text = text;
+    },
+    labelElement(canvas, model, sel) {
+      const v = vertex(model, sel);
+      if (v) return nodeEl(canvas, window.FlowDesigner.esc, v);
+      const i = edgeIndex(model, sel);
+      return i >= 0 ? labelFor(canvas, model, i) : null;
+    },
+
+    inspector(model, sel, ctx) {
+      const { h, field, select, commit, commitTyped, askText } = ctx;
+      const v = vertex(model, sel);
+      const ei = edgeIndex(model, sel);
+
+      if (v) {
+        const label = h('input', { type: 'text', value: v.text, 'data-field': 'label', spellcheck: 'false' });
+        label.addEventListener('input', () => {
+          commitTyped((m) => { const n = m.vertices.find((x) => x.id === v.id); if (n) n.text = label.value; }, 'label:' + v.id);
+        });
+        const shapeNow = v.type ? (FM().BRACKETS[v.type] ? v.type : FM().ALIASES[v.type] || v.type) : 'square';
+        const shapes = FM().SHAPES.some(([k]) => k === shapeNow) ? FM().SHAPES : [...FM().SHAPES, [shapeNow, shapeNow]];
+        const groups = [['', '(none)'], ...model.subgraphs.map((s) => [s.id, s.title || s.id])];
+        const group = model.subgraphs.find((s) => s.nodes.includes(v.id));
+        const link = h('input', { type: 'text', value: v.link || '', 'data-field': 'link', placeholder: 'https://…', spellcheck: 'false' });
+        link.addEventListener('change', () => {
+          commit((m) => { const n = m.vertices.find((x) => x.id === v.id); if (n) n.link = link.value.trim() || undefined; });
+        });
+        return [
+          h('div', { class: 'fd-head', text: `Node ${v.id}` }),
+          field('Label', label),
+          field('Shape', select(shapes, shapeNow, (val) => commit((m) => { const n = m.vertices.find((x) => x.id === v.id); if (n) n.type = val; }))),
+          field('Group', select(groups, group ? group.id : '', (val) => commit((m) => FM().setGroup(m, v.id, val)))),
+          field('Link', link),
+          h('p', { class: 'fd-hint', text: 'Double-click the node to rename it in place. Shift+click another node to connect.' }),
+        ];
+      }
+      if (ei >= 0) {
+        const e = model.edges[ei];
+        const label = h('input', { type: 'text', value: e.text, 'data-field': 'label', spellcheck: 'false' });
+        label.addEventListener('input', () => {
+          commitTyped((m) => { if (m.edges[ei]) m.edges[ei].text = label.value; }, 'edge:' + ei);
+        });
+        return [
+          h('div', { class: 'fd-head', text: `${e.start} → ${e.end}` }),
+          field('Label', label),
+          field('Arrow', select(FM().ARROWS, e.type, (val) => commit((m) => { if (m.edges[ei]) m.edges[ei].type = val; }))),
+          field('Line', select(FM().STROKES, e.stroke, (val) => commit((m) => { if (m.edges[ei]) m.edges[ei].stroke = val; }))),
+          field('Length', select([['1', 'Normal'], ['2', 'Longer'], ['3', 'Longest']], String(Math.min(3, e.length || 1)),
+            (val) => commit((m) => { if (m.edges[ei]) m.edges[ei].length = Number(val); }))),
+          h('button', { type: 'button', class: 'ghost-btn', text: 'Reverse direction',
+            onclick: () => commit((m) => { const x = m.edges[ei]; if (x) [x.start, x.end] = [x.end, x.start]; }, { select: { kind: 'edge', pair: [e.end, e.start] } }) }),
+        ];
+      }
+      const groups = model.subgraphs;
+      return [
+        h('div', { class: 'fd-head', text: 'Diagram' }),
+        field('Direction', select(FM().DIRECTIONS, model.direction === 'TD' ? 'TB' : model.direction, (val) => commit((m) => { m.direction = val; }))),
+        h('button', { type: 'button', class: 'ghost-btn', text: '+ Group', title: 'Add a subgraph box',
+          onclick: () => askText('New group', 'Group', (title) => commit((m) => { FM().addGroup(m, title || 'Group'); })) }),
+        groups.length ? h('div', { class: 'fd-groups' },
+          h('div', { class: 'fd-head', text: 'Groups' }),
+          ...groups.map((s) => h('div', { class: 'fd-group-row' },
+            h('span', { text: s.title || s.id, title: `${s.nodes.length} node${s.nodes.length === 1 ? '' : 's'}` }),
+            h('button', { type: 'button', class: 'ghost-btn sm', text: 'Rename', onclick: () => askText('Rename group', s.title || s.id, (title) => {
+              commit((m) => { const g = m.subgraphs.find((x) => x.id === s.id); if (g) g.title = title; });
+            }) }),
+            h('button', { type: 'button', class: 'ghost-btn sm', text: 'Ungroup', onclick: () => commit((m) => FM().removeGroup(m, s.id)) }),
+          ))) : null,
+        h('p', { class: 'fd-hint', text: 'Click a node or connection to edit it. Double-click a node to rename. Delete removes the selection.' }),
+      ];
+    },
+  };
+})();

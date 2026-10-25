@@ -52,6 +52,8 @@
       </button>
     </header>
 
+    <div id="tabs" role="tablist" aria-label="Open documents" hidden></div>
+
     <div id="body">
       <aside id="sidebar">
         <div class="pane-head">
@@ -173,6 +175,9 @@
         <dt>Ctrl+O</dt><dd>Open file</dd>
         <dt>Ctrl+Shift+O</dt><dd>Open folder</dd>
         <dt>Ctrl+S / Ctrl+Shift+S</dt><dd>Save / Save as</dd>
+        <dt>Ctrl+W</dt><dd>Close the current tab</dd>
+        <dt>Ctrl+Tab / Ctrl+Shift+Tab</dt><dd>Next / previous tab (also Ctrl+1…9)</dd>
+        <dt>Right-click a file</dt><dd>Open, show in folder, or move to the Trash</dd>
         <dt>Ctrl+E</dt><dd>Edit the document, or the drawing when one is open</dd>
         <dt>Diagram ▸ Edit</dt><dd>Edit a diagram in place: Source, Visual, or convert to a drawing</dd>
         <dt>Ctrl+Shift+P</dt><dd>Show / hide the live preview while editing</dd>
@@ -209,6 +214,8 @@
   <script src="editor.js"></script>
   <script src="draw.js"></script>
   <script src="flow.js"></script>
+  <script src="state.js"></script>
+  <script src="seq.js"></script>
   <script src="designer.js"></script>
   <script src="app.js"></script>
 </body>

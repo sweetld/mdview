@@ -76,6 +76,41 @@ html, body {
 
 #body { flex: 1 1 auto; display: flex; min-height: 0; }
 
+/* --------------------------------------------------------------- tabs --- */
+#tabs {
+  display: flex; align-items: stretch; flex: 0 0 auto; height: 34px;
+  padding: 0 6px; gap: 2px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
+  background: var(--bg-chrome); border-bottom: 1px solid var(--border);
+  -webkit-user-select: none; user-select: none;
+}
+#tabs::-webkit-scrollbar { display: none; }
+#tabs[hidden] { display: none; }
+.tab {
+  display: flex; align-items: center; gap: 6px; flex: 0 1 auto; min-width: 90px; max-width: 220px;
+  margin-top: 4px; padding: 0 6px 0 12px; border-radius: 7px 7px 0 0;
+  border: 1px solid transparent; border-bottom: 0;
+  color: var(--fg-muted); font-size: 12.5px; cursor: default; position: relative;
+}
+.tab:hover { background: var(--bg-hover); color: var(--fg); }
+.tab.active { background: var(--bg); color: var(--fg); border-color: var(--border); }
+.tab.active::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px; background: var(--bg); }
+.tab-name { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tab.dirty .tab-name::before { content: '•'; margin-right: 5px; color: var(--hl-attr); }
+.tab-close {
+  display: grid; place-items: center; width: 18px; height: 18px; flex: 0 0 auto; padding: 0;
+  border: 0; border-radius: 4px; background: transparent; color: var(--fg-faint);
+  opacity: 0; transition: opacity .12s ease; cursor: default;
+}
+.tab:hover .tab-close, .tab.active .tab-close { opacity: 1; }
+.tab-close:hover { background: var(--bg-active); color: var(--fg); }
+.tab-close svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+
+/* Files that are open in a tab carry a small mark in the sidebar. */
+#tree .row.file.open:not(.current) span::after {
+  content: ''; display: inline-block; width: 5px; height: 5px; margin-left: 6px; vertical-align: middle;
+  border-radius: 50%; background: var(--fg-faint);
+}
+
 #main { flex: 1 1 auto; min-width: 0; position: relative; overflow: auto; scroll-behavior: smooth; }
 #main.no-smooth { scroll-behavior: auto; }
 #main[hidden] { display: none; }
@@ -635,14 +670,29 @@ body:has(#toc:not([hidden])) #zoom-pill { right: 244px; }
 .diagram-editor.visual > .fd-root { display: grid; }
 .fd-root {
   grid-column: 1 / -1; grid-template-columns: minmax(0, 1fr) 230px; gap: 10px;
-  min-height: 300px; max-height: 70vh;
+  min-height: 360px; max-height: 75vh; position: relative;
 }
 .fd-canvas {
   position: relative; overflow: auto; border: 1px solid var(--border); border-radius: 6px;
-  background: var(--bg); outline: none; text-align: center; padding: 14px;
+  background: var(--bg); outline: none; text-align: left; padding: 14px;
 }
 .fd-canvas:focus { border-color: var(--accent); }
-.fd-canvas svg { max-width: 100%; height: auto; }
+/* Natural size, scrolling, so every node stays big enough to click; the
+   zoom pill scales it. */
+.fd-canvas svg { display: block; max-width: none; height: auto; }
+.fd-zoom {
+  position: absolute; right: 250px; bottom: 10px; z-index: 3;
+  display: flex; align-items: center; gap: 2px; padding: 2px;
+  border: 1px solid var(--border-strong); border-radius: 8px;
+  background: var(--bg-chrome); box-shadow: var(--shadow);
+  -webkit-user-select: none; user-select: none;
+}
+.fd-zoom-num {
+  height: 22px; min-width: 40px; padding: 0 6px; border: 0; border-radius: 5px;
+  background: transparent; color: var(--fg-muted); font: inherit; font-size: 11px;
+  font-variant-numeric: tabular-nums; cursor: default;
+}
+.fd-zoom-num:hover { background: var(--bg-hover); color: var(--fg); }
 .fd-canvas .fd-node, .fd-canvas .fd-edge, .fd-canvas .fd-edge-label { cursor: pointer; }
 .fd-canvas .fd-edge { stroke-width: 2px; }
 .fd-canvas .fd-edge:hover { stroke-width: 4px; }
@@ -654,7 +704,14 @@ body:has(#toc:not([hidden])) #zoom-pill { right: 244px; }
 }
 .fd-canvas .fd-edge.fd-selected { stroke: var(--accent) !important; stroke-width: 4px !important; }
 .fd-canvas .fd-edge-label.fd-selected rect { fill: var(--accent-soft) !important; stroke: var(--accent); }
-.fd-canvas.connecting .fd-node { cursor: crosshair; }
+.fd-canvas.connecting .fd-node, .fd-canvas.connecting .fd-actor { cursor: crosshair; }
+/* State and sequence diagrams: clusters, actor boxes, message lines and text. */
+.fd-canvas .fd-msg, .fd-canvas .fd-actor { cursor: pointer; }
+.fd-canvas text.fd-selected { fill: var(--accent) !important; font-weight: 700; }
+.fd-canvas rect.fd-selected, .fd-canvas .fd-actor.fd-selected:not(text) { stroke: var(--accent) !important; stroke-width: 3px !important; }
+.fd-canvas line.fd-selected, .fd-canvas path.fd-msg.fd-selected { stroke: var(--accent) !important; stroke-width: 3px !important; }
+.fd-canvas g.clusters g.fd-node.fd-selected > rect, .fd-canvas g.clusters g.fd-node.fd-selected rect.outer { stroke: var(--accent) !important; stroke-width: 3px !important; }
+.fd-canvas g.clusters g.fd-node:hover > rect { filter: brightness(.96); }
 .fd-inline {
   position: absolute; z-index: 2; height: 28px; padding: 0 8px; font: inherit; font-size: 13px;
   border: 2px solid var(--accent); border-radius: 5px; background: var(--bg); color: var(--fg); outline: none;

@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, Menu, dialog, ipcMain, shell, nativeTheme } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, shell, nativeTheme, clipboard } = require('electron');
 const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
@@ -11,9 +11,6 @@ const SKIP_DIRS = new Set(['node_modules', '.git', '.svn', 'dist', 'build', '.ne
 const STATE_FILE = () => path.join(app.getPath('userData'), 'state.json');
 
 let mainWindow = null;
-let watcher = null;
-let watchedPath = null;
-let watchTimer = null;
 let currentRoot = null;
 let exporting = false;
 // What the renderer is editing: false, 'text' (formatting shortcuts take
@@ -53,33 +50,41 @@ function rememberRecent(filePath) {
 
 /* -------------------------------------------------------------- watching */
 
-function watchFile(filePath) {
-  unwatch();
+// One watcher per open tab; the renderer says when a tab closes.
+const watchers = new Map();
+
+function watchFile(filePath, { rearm = false } = {}) {
   if (!filePath) return;
+  if (watchers.has(filePath) && !rearm) return;
+  unwatchFile(filePath);
+  let timer = null;
   try {
-    watcher = fs.watch(filePath, () => {
-      clearTimeout(watchTimer);
-      watchTimer = setTimeout(() => {
+    const watcher = fs.watch(filePath, () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
         // Editors often replace rather than rewrite; re-arm the watch.
         if (fs.existsSync(filePath)) {
-          watchFile(filePath);
+          watchFile(filePath, { rearm: true });
           send('file:changed', filePath);
         }
       }, 120);
     });
-    watchedPath = filePath;
+    watchers.set(filePath, { watcher, cancel: () => clearTimeout(timer) });
   } catch {
     /* unwatchable file is not fatal — the viewer just won't live-reload */
   }
 }
 
+function unwatchFile(filePath) {
+  const entry = watchers.get(filePath);
+  if (!entry) return;
+  entry.cancel();
+  try { entry.watcher.close(); } catch { /* already gone */ }
+  watchers.delete(filePath);
+}
+
 function unwatch() {
-  clearTimeout(watchTimer);
-  if (watcher) {
-    try { watcher.close(); } catch { /* already gone */ }
-  }
-  watcher = null;
-  watchedPath = null;
+  for (const p of [...watchers.keys()]) unwatchFile(p);
 }
 
 /* ----------------------------------------------------------------- utils */
@@ -138,9 +143,14 @@ async function canDiscard() {
   }
 }
 
-async function openPath(target, { confirmed = false } = {}) {
+// Opening is additive — each file lands in its own tab — so nothing here
+// needs to ask about unsaved changes.
+async function openPaths(targets) {
+  for (const target of targets || []) await openPath(target);
+}
+
+async function openPath(target) {
   if (!target) return;
-  if (!confirmed && !(await canDiscard())) return;
   let stat;
   try {
     stat = await fsp.stat(target);
@@ -153,7 +163,7 @@ async function openPath(target, { confirmed = false } = {}) {
     const tree = await scanDir(target);
     send('folder:opened', { root: target, tree });
     const first = firstFile(tree);
-    if (first) await openPath(first, { confirmed: true });
+    if (first) await openPath(first);
     return;
   }
   const content = await fsp.readFile(target, 'utf8');
@@ -182,7 +192,7 @@ async function saveFile(filePath, content) {
   try {
     await fsp.writeFile(filePath, content, 'utf8');
     // Writing replaces the inode on some editors' behalf; re-arm the watch.
-    watchFile(filePath);
+    watchFile(filePath, { rearm: true });
     rememberRecent(filePath);
     return { ok: true };
   } catch (err) {
@@ -215,6 +225,50 @@ async function saveFileAs(content, suggested) {
   }
   if (mainWindow) mainWindow.setTitle(`${path.basename(target)} — MD View`);
   return { ok: true, path: target, dir, kind: kindOf(target) || 'markdown' };
+}
+
+/* ---------------------------------------------------------------- deleting */
+
+const BIN = process.platform === 'win32' ? 'Recycle Bin' : 'Trash';
+
+// Files go to the Trash, never straight to unlink, so a slip is recoverable.
+async function trashFile(filePath, { dirty = false } = {}) {
+  const name = path.basename(filePath);
+  // The smoke-test hook cannot click a native dialog.
+  const { response } = process.env.MDV_SHOT_YES ? { response: 0 } : await dialog.showMessageBox(mainWindow, {
+    type: 'warning',
+    buttons: [`Move to ${BIN}`, 'Cancel'],
+    defaultId: 0,
+    cancelId: 1,
+    message: `Move “${name}” to the ${BIN}?`,
+    detail: dirty
+      ? `It has unsaved changes, which will be lost. The file itself can be restored from the ${BIN}.`
+      : `You can restore it from the ${BIN}.`,
+  });
+  if (response !== 0) return { ok: false, canceled: true };
+  try {
+    await shell.trashItem(filePath);
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+  unwatchFile(filePath);
+  state.recent = (state.recent || []).filter((p) => p !== filePath);
+  saveState();
+  buildMenu();
+  if (currentRoot) send('folder:opened', { root: currentRoot, tree: await scanDir(currentRoot) });
+  return { ok: true };
+}
+
+function showTreeMenu(filePath) {
+  const menu = Menu.buildFromTemplate([
+    { label: 'Open', click: () => openPath(filePath) },
+    { label: process.platform === 'darwin' ? 'Show in Finder' : 'Show in Folder', click: () => shell.showItemInFolder(filePath) },
+    { label: 'Copy Path', click: () => clipboard.writeText(filePath) },
+    { type: 'separator' },
+    // The renderer owns the tabs, so it drives the delete and tidies up after.
+    { label: `Move to ${BIN}…`, click: () => send('file:trash-request', filePath) },
+  ]);
+  menu.popup({ window: mainWindow });
 }
 
 async function askUnsaved(name) {
@@ -252,8 +306,8 @@ function pathsFromArgv(argv) {
 
 async function chooseFile() {
   const res = await dialog.showOpenDialog(mainWindow, {
-    title: 'Open a document',
-    properties: ['openFile'],
+    title: 'Open documents',
+    properties: ['openFile', 'multiSelections'],
     filters: [
       { name: 'Markdown and Excalidraw', extensions: ['md', 'markdown', 'mdown', 'mkd', 'mdx', 'excalidraw'] },
       { name: 'Markdown', extensions: ['md', 'markdown', 'mdown', 'mkd', 'mdx'] },
@@ -261,7 +315,7 @@ async function chooseFile() {
       { name: 'All files', extensions: ['*'] },
     ],
   });
-  if (!res.canceled && res.filePaths[0]) await openPath(res.filePaths[0]);
+  if (!res.canceled && res.filePaths.length) await openPaths(res.filePaths);
 }
 
 async function chooseFolder() {
@@ -303,6 +357,9 @@ function buildMenu() {
         { label: 'Save', accelerator: 'CmdOrCtrl+S', click: action('save') },
         { label: 'Save As…', accelerator: 'CmdOrCtrl+Shift+S', click: action('save-as') },
         { type: 'separator' },
+        { label: 'Close Tab', accelerator: 'CmdOrCtrl+W', click: action('close-tab') },
+        { label: `Move File to ${BIN}…`, click: action('delete-file') },
+        { type: 'separator' },
         { label: 'Reload File', accelerator: 'CmdOrCtrl+R', click: action('reload') },
         { type: 'separator' },
         {
@@ -316,7 +373,7 @@ function buildMenu() {
           ],
         },
         { type: 'separator' },
-        { role: 'close', accelerator: 'CmdOrCtrl+W' },
+        { role: 'close', label: 'Close Window', accelerator: 'CmdOrCtrl+Alt+W' },
         { role: 'quit', accelerator: 'CmdOrCtrl+Q' },
       ],
     },
@@ -375,6 +432,15 @@ function buildMenu() {
       submenu: [
         { label: 'Toggle Sidebar', accelerator: text ? 'CmdOrCtrl+\\' : 'CmdOrCtrl+B', click: action('toggle-sidebar') },
         { label: 'Toggle Outline', accelerator: 'CmdOrCtrl+Shift+B', click: action('toggle-toc') },
+        { type: 'separator' },
+        { label: 'Next Tab', accelerator: 'Ctrl+Tab', click: action('next-tab') },
+        { label: 'Previous Tab', accelerator: 'Ctrl+Shift+Tab', click: action('prev-tab') },
+        { label: 'Next Tab ', accelerator: 'CmdOrCtrl+Shift+]', visible: false, click: action('next-tab') },
+        { label: 'Previous Tab ', accelerator: 'CmdOrCtrl+Shift+[', visible: false, click: action('prev-tab') },
+        ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => ({
+          label: `Tab ${n}`, accelerator: `CmdOrCtrl+${n}`, visible: false, click: action(`tab:${n}`),
+        })),
+        { type: 'separator' },
         { label: 'Toggle Source View', accelerator: 'CmdOrCtrl+U', enabled: !editing, click: action('toggle-source') },
         { label: 'Toggle Live Preview', accelerator: 'CmdOrCtrl+Shift+P', enabled: text, click: action('toggle-preview') },
         {
@@ -709,6 +775,11 @@ function createWindow() {
 ipcMain.handle('open:dialog-file', chooseFile);
 ipcMain.handle('open:dialog-folder', chooseFolder);
 ipcMain.handle('open:path', (_e, p) => openPath(p));
+ipcMain.handle('open:paths', (_e, list) => openPaths(list));
+ipcMain.handle('file:unwatch', (_e, p) => unwatchFile(p));
+ipcMain.handle('file:trash', (_e, { path: p, dirty }) => trashFile(p, { dirty }));
+ipcMain.handle('tree:menu', (_e, p) => showTreeMenu(p));
+ipcMain.handle('window:close', () => { if (mainWindow) mainWindow.close(); });
 ipcMain.handle('file:read', async (_e, p) => {
   try {
     return { ok: true, content: await fsp.readFile(p, 'utf8') };
@@ -756,8 +827,7 @@ if (!app.requestSingleInstanceLock()) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
     }
-    const targets = pathsFromArgv(argv);
-    if (targets.length) openPath(targets[0]);
+    openPaths(pathsFromArgv(argv));
   });
 
   app.whenReady().then(async () => {
@@ -774,7 +844,7 @@ if (!app.requestSingleInstanceLock()) {
     buildMenu();
     const targets = pathsFromArgv(process.argv);
     mainWindow.webContents.once('did-finish-load', () => {
-      if (targets.length) openPath(targets[0]);
+      if (targets.length) openPaths(targets);
       else send('ready-empty');
     });
   });
